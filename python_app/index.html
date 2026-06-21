@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的笔记</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+    background: #f0f2f5; color: #333; min-height: 100vh;
+  }
+  /* 顶部导航 */
+  .header {
+    background: #fff; padding: 16px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; color: #1a1a1a; }
+  .btn-add {
+    background: #1677ff; color: #fff; border: none;
+    padding: 8px 20px; border-radius: 6px; font-size: 14px;
+    cursor: pointer; transition: background .2s;
+  }
+  .btn-add:hover { background: #4096ff; }
+
+  /* 笔记列表 */
+  .container { max-width: 720px; margin: 0 auto; padding: 20px 16px; }
+  .empty-state {
+    text-align: center; padding: 60px 20px; color: #999;
+  }
+  .empty-state p { font-size: 15px; margin-top: 8px; }
+
+  /* 笔记卡片 */
+  .note-card {
+    background: #fff; border-radius: 8px; padding: 16px 20px;
+    margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    display: flex; justify-content: space-between; align-items: flex-start;
+    transition: box-shadow .2s;
+  }
+  .note-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+  .note-body { flex: 1; cursor: pointer; min-width: 0; }
+  .note-title {
+    font-size: 16px; font-weight: 500; color: #1a1a1a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .note-meta { font-size: 12px; color: #999; margin-top: 4px; }
+  .note-content {
+    font-size: 14px; color: #666; margin-top: 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .btn-delete {
+    background: none; border: none; color: #ff4d4f;
+    font-size: 18px; cursor: pointer; padding: 4px 8px;
+    border-radius: 4px; transition: background .2s; flex-shrink: 0;
+  }
+  .btn-delete:hover { background: #fff1f0; }
+
+  /* 模态框 */
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.45); z-index: 1000;
+    justify-content: center; align-items: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; padding: 24px;
+    width: 90%; max-width: 480px; max-height: 80vh; overflow-y: auto;
+  }
+  .modal h2 { font-size: 18px; margin-bottom: 16px; }
+  .modal label { display: block; font-size: 14px; color: #666; margin-bottom: 4px; }
+  .modal input, .modal textarea {
+    width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9;
+    border-radius: 6px; font-size: 14px; margin-bottom: 12px;
+    outline: none; transition: border .2s; font-family: inherit;
+  }
+  .modal input:focus, .modal textarea:focus { border-color: #1677ff; }
+  .modal textarea { height: 150px; resize: vertical; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .modal-actions button {
+    padding: 8px 20px; border-radius: 6px; font-size: 14px; cursor: pointer; border: none;
+  }
+  .btn-cancel { background: #f5f5f5; color: #666; }
+  .btn-cancel:hover { background: #e8e8e8; }
+  .btn-save { background: #1677ff; color: #fff; }
+  .btn-save:hover { background: #4096ff; }
+
+  /* 加载/错误提示 */
+  .toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 10px 24px; border-radius: 6px;
+    font-size: 14px; z-index: 2000; opacity: 0; transition: opacity .3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #ff4d4f; }
+  .toast.success { background: #52c41a; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>📒 我的笔记</h1>
+    <button class="btn-add" onclick="openAddDialog()">+ 添加笔记</button>
+  </div>
+
+  <div class="container" id="app">
+    <div class="empty-state" id="emptyState">
+      <div style="font-size:48px">📝</div>
+      <p>暂无笔记，点击右上角「添加笔记」开始记录</p>
+    </div>
+    <div id="noteList"></div>
+  </div>
+
+  <!-- 模态框 -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <h2 id="modalTitle">添加笔记</h2>
+      <label for="noteTitle">标题</label>
+      <input type="text" id="noteTitle" placeholder="请输入标题" maxlength="100">
+      <label for="noteContent">内容</label>
+      <textarea id="noteContent" placeholder="请输入笔记内容" maxlength="5000"></textarea>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal()">取消</button>
+        <button class="btn-save" onclick="saveNote()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 提示 -->
+  <div class="toast" id="toast"></div>
+
+<script>
+  let editingId = null;
+  const API = '/api/notes';
+
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.classList.remove('show'), 2000);
+  }
+
+  function openAddDialog() {
+    editingId = null;
+    document.getElementById('modalTitle').textContent = '添加笔记';
+    document.getElementById('noteTitle').value = '';
+    document.getElementById('noteContent').value = '';
+    document.getElementById('modalOverlay').classList.add('active');
+  }
+
+  function openEditDialog(id, title, content) {
+    editingId = id;
+    document.getElementById('modalTitle').textContent = '编辑笔记';
+    document.getElementById('noteTitle').value = title;
+    document.getElementById('noteContent').value = content;
+    document.getElementById('modalOverlay').classList.add('active');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('active');
+    editingId = null;
+  }
+
+  async function saveNote() {
+    const title = document.getElementById('noteTitle').value.trim();
+    const content = document.getElementById('noteContent').value.trim();
+    if (!title && !content) {
+      showToast('标题和内容不能同时为空', 'error');
+      return;
+    }
+    try {
+      let resp;
+      if (editingId) {
+        resp = await fetch(API + '/' + editingId, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content })
+        });
+      } else {
+        resp = await fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content })
+        });
+      }
+      if (resp.ok) {
+        showToast(editingId ? '更新成功' : '添加成功');
+        closeModal();
+        loadNotes();
+      } else {
+        const data = await resp.json();
+        showToast(data.error || '操作失败', 'error');
+      }
+    } catch (e) {
+      showToast('网络错误，请检查服务器', 'error');
+    }
+  }
+
+  async function deleteNote(id) {
+    if (!confirm('确定要删除这条笔记吗？')) return;
+    try {
+      const resp = await fetch(API + '/' + id, { method: 'DELETE' });
+      if (resp.ok) {
+        showToast('删除成功');
+        loadNotes();
+      } else {
+        showToast('删除失败', 'error');
+      }
+    } catch (e) {
+      showToast('网络错误', 'error');
+    }
+  }
+
+  function renderNote(note) {
+    const card = document.createElement('div');
+    card.className = 'note-card';
+    const titleDisplay = note.title || '无标题';
+    const time = note.created_at || '';
+    card.innerHTML = `
+      <div class="note-body" onclick="openEditDialog(${note.id}, '${escapeStr(note.title)}', '${escapeStr(note.content)}')">
+        <div class="note-title">${escapeHtml(titleDisplay)}</div>
+        <div class="note-meta">${escapeHtml(time)}</div>
+        ${note.content ? '<div class="note-content">' + escapeHtml(note.content) + '</div>' : ''}
+      </div>
+      <button class="btn-delete" onclick="deleteNote(${note.id})" title="删除">✕</button>
+    `;
+    return card;
+  }
+
+  function escapeStr(s) {
+    return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  async function loadNotes() {
+    try {
+      const resp = await fetch(API);
+      const notes = await resp.json();
+      const list = document.getElementById('noteList');
+      const empty = document.getElementById('emptyState');
+      list.innerHTML = '';
+      if (notes.length === 0) {
+        empty.style.display = 'block';
+      } else {
+        empty.style.display = 'none';
+        notes.forEach(n => list.appendChild(renderNote(n)));
+      }
+    } catch (e) {
+      showToast('加载笔记失败', 'error');
+    }
+  }
+
+  // 点击遮罩层关闭
+  document.getElementById('modalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // 按 ESC 关闭
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // 初始化加载
+  loadNotes();
+</script>
+</body>
+</html>

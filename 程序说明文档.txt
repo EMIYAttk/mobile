@@ -1,0 +1,436 @@
+# 笔记助手 Android 应用程序说明文档
+
+## 1 绪论
+
+### 1.1 项目背景
+
+在日常学习与工作中，人们经常需要快速记录零散信息，如课堂笔记、会议要点、待办事项等。传统的纸质笔记存在不易整理、不便检索、容易丢失等问题。随着移动智能设备的普及，开发一款轻量级的笔记管理应用能够有效解决上述问题，提高信息管理的效率。
+
+本项目基于 Android 平台开发，采用 Kotlin 语言与 Jetpack Compose 框架，以 SQLite 数据库实现数据持久化，构建了一款具备完整增删改查功能的笔记管理应用。应用作为课程作业提交，旨在展示移动应用开发中前端界面、后端逻辑与数据库三层的完整整合能力。
+
+### 1.2 开发工具与环境
+
+（1）开发环境：Android Studio
+（2）编程语言：Kotlin 2.2.10
+（3）界面框架：Jetpack Compose（Material3 设计风格）
+（4）构建工具：Gradle 9.3.1，Android Gradle Plugin 9.1.1
+（5）数据库方案：SQLite（通过 SQLiteOpenHelper 操作）
+（6）目标平台：Android 7.0（API 24）及以上版本
+
+### 1.3 技术选型
+
+（1）前端界面：选用 Jetpack Compose，这是 Android 官方推荐的现代声明式 UI 框架。相比传统的 XML 布局方式，Compose 使用 Kotlin 代码直接描述界面，具有代码量少、组件复用方便、与响应式状态结合紧密等优势。Material3 组件库提供了符合现代设计规范的 UI 元素，能够快速构建美观的界面。
+
+（2）后端数据：选用 Android 原生的 SQLiteOpenHelper 操作 SQLite 数据库。SQLite 是 Android 内置的轻量级关系型数据库，无需额外引入第三方依赖库，零外部依赖即可实现数据的持久化存储，满足应用对数据库存储的基本要求。
+
+（3）应用架构：采用三层分层架构，将数据层（DatabaseHelper、Repository）、中间层（ViewModel）和界面层（Composable）分离。这种架构明确了各层的职责边界，提高了代码的可维护性和可测试性。
+
+## 2 系统分析与设计
+
+### 2.1 需求分析
+
+本应用的核心功能是对笔记数据进行管理，具体需求如下：
+
+（1）添加笔记：用户可输入笔记的标题和内容，系统将其保存到数据库中，并将新笔记显示在列表中。
+
+（2）查看笔记：用户可浏览所有已保存的笔记列表，列表按时间倒序排列，最新的笔记排在最前面。每条笔记卡片显示标题、时间和内容摘要。
+
+（3）编辑笔记：用户可点击任意笔记卡片，修改其标题和内容，修改完成后保存更新至数据库。
+
+（4）删除笔记：用户可删除不需要的笔记，数据从数据库中移除。
+
+（5）标题判重：在添加或编辑笔记时，系统自动检查标题是否已存在。若标题重复，则给出提示并阻止保存，避免数据混乱。
+
+（6）数据持久化：所有笔记数据通过数据库存储，应用重启后数据不丢失。
+
+### 2.2 系统架构设计
+
+本应用采用三层分层架构，自底向上依次为数据层、视图模型层和界面层。各层职责明确，上层通过调用下层的公共接口完成功能，下层不依赖上层。
+
+#### 2.2.1 数据层
+
+数据层负责所有数据的存储与读取，即与 SQLite 数据库的直接交互。由两个类组成：
+
+（1）NoteDatabaseHelper：继承 SQLiteOpenHelper，管理数据库的创建、升级和执行 CRUD 操作的 SQL 语句。
+
+（2）NoteRepository：作为数据仓库，对 NoteDatabaseHelper 的 CRUD 方法进行封装，向上层提供统一的调用接口。
+
+#### 2.2.2 视图模型层
+
+视图模型层由 NoteViewModel 实现，继承 AndroidViewModel。它持有数据层（Repository）的引用，通过协程在 IO 线程上执行数据库操作，避免阻塞主线程。ViewModel 使用 StateFlow 对外暴露笔记列表状态，界面层通过观察 StateFlow 的变化来自动刷新 UI。
+
+#### 2.2.3 界面层
+
+界面层由多个 Composable 函数组成，使用 Jetpack Compose Material3 组件构建。负责接收用户操作事件并将其转发给 ViewModel，同时观察 ViewModel 暴露的状态数据并渲染界面。
+
+### 2.3 数据库设计
+
+应用使用 SQLite 数据库，单表结构即可满足笔记管理需求。数据库仅包含一张笔记表（notes），其表结构如下：
+
+（1）id：整型，主键，自增长，唯一标识一条笔记。
+
+（2）title：文本类型，非空，默认值为空字符串，存储笔记标题。
+
+（3）content：文本类型，非空，默认值为空字符串，存储笔记内容。
+
+（4）timestamp：长整型，非空，存储笔记创建或最后修改的时间戳（毫秒级）。
+
+建表的 SQL 算法如算法 2.1 所示。
+
+算法 2.1 初始化数据库表
+
+─────────────────────────────────────────────
+CREATE TABLE notes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    title     TEXT NOT NULL DEFAULT '',
+    content   TEXT NOT NULL DEFAULT '',
+    timestamp INTEGER NOT NULL
+);
+─────────────────────────────────────────────
+
+## 3 系统实现
+
+### 3.1 数据层实现
+
+#### 3.1.1 笔记数据模型
+
+笔记数据模型使用 Kotlin 的 data class 定义，作为数据库表记录与内存对象之间的映射。id 为数据库自增主键，创建新笔记时由数据库自动分配；timestamp 默认为当前系统时间。
+
+代码 3.1 笔记数据类
+
+─────────────────────────────────────────────
+data class Note(
+    val id: Int = 0,
+    val title: String,
+    val content: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+─────────────────────────────────────────────
+
+#### 3.1.2 数据库操作实现
+
+NoteDatabaseHelper 继承自 SQLiteOpenHelper，是应用与 SQLite 数据库之间的桥梁。在构造时指定数据库名称为 "notes.db"，版本号为 1。当数据库首次被访问时，系统自动调用 onCreate 方法创建 notes 表。
+
+（1）创建笔记
+
+算法 3.1 创建笔记
+
+─────────────────────────────────────────────
+算法：创建笔记
+
+输入：笔记对象 note（包含标题、内容、时间戳）
+输出：新笔记的 id（长整型）
+
+步骤：
+1.  获取可写数据库 db
+2.  创建 ContentValues 对象 values
+3.  将 note.title 放入 values 的 "title" 键
+4.  将 note.content 放入 values 的 "content" 键
+5.  将 note.timestamp 放入 values 的 "timestamp" 键
+6.  调用 db.insert("notes", null, values) 插入记录
+7.  返回插入记录的 id
+─────────────────────────────────────────────
+
+（2）查询所有笔记
+
+算法 3.2 查询所有笔记
+
+─────────────────────────────────────────────
+算法：查询所有笔记
+
+输出：笔记列表（按时间倒序）
+
+步骤：
+1.  获取可读数据库 db
+2.  调用 db.query("notes", null, null, null, null, null,
+               "timestamp DESC") 获取游标 cursor
+3.  初始化空的可变列表 notes
+4.  对 cursor 中的每一行记录循环：
+5.      从当前行读取 id、title、content、timestamp
+6.      构造 Note 对象并添加到 notes 列表
+7.  返回 notes
+─────────────────────────────────────────────
+
+（3）更新笔记
+
+算法 3.3 更新笔记
+
+─────────────────────────────────────────────
+算法：更新笔记
+
+输入：笔记对象 note（包含更新后的 id、标题、内容、时间戳）
+输出：受影响的行数（整型）
+
+步骤：
+1.  获取可写数据库 db
+2.  创建 ContentValues 对象 values
+3.  将 note.title 放入 values 的 "title" 键
+4.  将 note.content 放入 values 的 "content" 键
+5.  将 note.timestamp 放入 values 的 "timestamp" 键
+6.  调用 db.update("notes", values, "id = ?",
+               arrayOf(note.id.toString())) 更新记录
+7.  返回受影响的行数
+─────────────────────────────────────────────
+
+（4）删除笔记
+
+算法 3.4 删除笔记
+
+─────────────────────────────────────────────
+算法：删除笔记
+
+输入：笔记 id（整型）
+输出：受影响的行数（整型）
+
+步骤：
+1.  获取可写数据库 db
+2.  调用 db.delete("notes", "id = ?",
+               arrayOf(noteId.toString())) 删除记录
+3.  返回受影响的行数
+─────────────────────────────────────────────
+
+（5）标题判重
+
+在添加或编辑笔记时，应用需要对标题进行唯一性校验：添加时检查该标题是否已存在于数据库中；编辑时排除自身（即允许保留原标题），检查标题是否已被其他笔记占用。
+
+算法 3.5 标题判重
+
+─────────────────────────────────────────────
+算法：检查标题是否已存在
+
+输入：标题 title（字符串），可选的排除 id excludeId（整型）
+输出：若标题存在则返回真，否则返回假
+
+步骤：
+1.  获取可读数据库 db
+2.  如果 excludeId 不为空：
+3.      设置查询条件为 "title = ? AND id != ?"
+4.      设置查询参数为 [title, excludeId.toString()]
+5.  否则：
+6.      设置查询条件为 "title = ?"
+7.      设置查询参数为 [title]
+8.  调用 db.query("notes", ["id"], 条件, 参数,
+               null, null, "1") 限制最多返回1条
+9.  如果游标中的记录数大于 0，返回真，否则返回假
+─────────────────────────────────────────────
+
+代码 3.2 展示了标题判重功能的实际实现代码。
+
+代码 3.2 标题判重实现
+
+─────────────────────────────────────────────
+fun titleExists(title: String, excludeId: Int? = null): Boolean {
+    val db = readableDatabase
+    val selection = if (excludeId != null) {
+        "title = ? AND id != ?"
+    } else {
+        "title = ?"
+    }
+    val args = if (excludeId != null) {
+        arrayOf(title, excludeId.toString())
+    } else {
+        arrayOf(title)
+    }
+    val cursor = db.query(
+        "notes", arrayOf("id"),
+        selection, args, null, null, "1"
+    )
+    return cursor.use { it.count > 0 }
+}
+─────────────────────────────────────────────
+
+#### 3.1.3 数据仓库封装
+
+NoteRepository 对 NoteDatabaseHelper 的 CRUD 方法和判重方法做了一层封装，上层代码（ViewModel）不直接操作 SQLiteOpenHelper，而是通过 Repository 进行数据访问。这一层抽象的好处是：当需要更换数据存储方案（如迁移到 Room 或网络 API）时，只需修改 Repository 的实现，上层代码无需改动。
+
+代码 3.3 数据仓库
+
+─────────────────────────────────────────────
+class NoteRepository(private val dbHelper: NoteDatabaseHelper) {
+
+    fun getAllNotes(): List<Note> = dbHelper.getAllNotes()
+
+    fun titleExists(title: String, excludeId: Int? = null): Boolean =
+        dbHelper.titleExists(title, excludeId)
+
+    fun insert(note: Note): Long = dbHelper.insertNote(note)
+
+    fun update(note: Note): Int = dbHelper.updateNote(note)
+
+    fun delete(noteId: Int): Int = dbHelper.deleteNote(noteId)
+}
+─────────────────────────────────────────────
+
+### 3.2 视图模型层实现
+
+NoteViewModel 继承 AndroidViewModel，持有 NoteRepository 的引用作为数据源。内部维护一个 MutableStateFlow<List<Note>> 用于对外暴露笔记列表状态。
+
+（1）初始化时创建 NoteDatabaseHelper 和 NoteRepository，并立即调用 refreshNotes 加载数据。
+
+（2）refreshNotes 使用 viewModelScope.launch 启动协程，在 Dispatchers.IO 线程上执行数据库查询，查询结果通过 StateFlow 发布，界面层观察到状态变化后自动重绘。
+
+（3）insert、update、delete 方法均采用类似的异步模式：先在 IO 线程执行数据库操作，再调用 refreshNotes 刷新列表。
+
+（4）checkTitleDuplicate 是一个挂起函数（suspend function），在 IO 线程上调用 repository.titleExists 进行判重，根据结果返回错误提示信息或空值。
+
+代码 3.4 ViewModel 实现
+
+─────────────────────────────────────────────
+class NoteViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository: NoteRepository
+
+    private val _notes = MutableStateFlow<List<Note>>(emptyList())
+    val notes: StateFlow<List<Note>> = _notes
+
+    init {
+        val dbHelper = NoteDatabaseHelper(application)
+        repository = NoteRepository(dbHelper)
+        refreshNotes()
+    }
+
+    /** 刷新笔记列表 */
+    fun refreshNotes() {
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) {
+                repository.getAllNotes()
+            }
+            _notes.value = list
+        }
+    }
+
+    /** 判重：返回 null 表示可用，否则返回错误信息 */
+    suspend fun checkTitleDuplicate(
+        title: String, excludeId: Int? = null
+    ): String? {
+        if (title.isBlank()) return null
+        return withContext(Dispatchers.IO) {
+            if (repository.titleExists(title, excludeId)) {
+                if (excludeId != null) "标题已被其他笔记使用"
+                else "标题已存在"
+            } else null
+        }
+    }
+
+    /** 添加笔记 */
+    fun insert(note: Note) { ... }
+
+    /** 更新笔记 */
+    fun update(note: Note) { ... }
+
+    /** 删除笔记 */
+    fun delete(noteId: Int) { ... }
+}
+─────────────────────────────────────────────
+
+### 3.3 界面层实现
+
+界面层使用 Jetpack Compose 框架，主要由三个 Composable 函数构成：NoteApp（主界面容器）、NoteItem（单条笔记卡片）、NoteDialog（添加/编辑对话框）。三者组合形成完整的用户界面。
+
+#### 3.3.1 主界面
+
+NoteApp 是整个应用的根 Composable，它使用 Scaffold 布局容器，包含顶部应用栏、笔记列表和浮动操作按钮。通过 collectAsState 观察 ViewModel 的 note 状态，笔记列表为空时显示提示文字，非空时使用 LazyColumn 渲染笔记卡片列表。保存笔记前先调用 checkTitleDuplicate 进行判重，标题重复时通过 Snackbar 显示错误信息。
+
+#### 3.3.2 笔记卡片
+
+NoteItem 使用 Card 组件展示单条笔记，卡片内使用 Row 布局在左侧显示标题、时间和内容摘要，右侧显示删除按钮。标题最多显示一行，内容最多两行，超出部分以省略号截断。
+
+代码 3.5 展示了笔记卡片的核心布局代码。
+
+代码 3.5 笔记卡片
+
+─────────────────────────────────────────────
+@Composable
+fun NoteItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                // 标题：单行，省略号截断
+                Text(text = note.title.ifEmpty { "无标题" },
+                     style = MaterialTheme.typography.titleMedium,
+                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // 时间
+                Text(text = formatTimestamp(note.timestamp),
+                     style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 内容：最多两行
+                if (note.content.isNotEmpty()) {
+                    Text(text = note.content, maxLines = 2,
+                         overflow = TextOverflow.Ellipsis)
+                }
+            }
+            // 删除按钮
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "删除",
+                     tint = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+─────────────────────────────────────────────
+
+#### 3.3.3 笔记对话框
+
+NoteDialog 使用 AlertDialog 组件。对话框标题根据当前操作状态显示"添加笔记"或"编辑笔记"，内容区域包含两个 OutlinedTextField 分别用于输入标题和内容。点击保存按钮时，若标题和内容均不为空，则调用 onSave 回调将数据传递给上层处理。
+
+## 4 系统运行与使用
+
+### 4.1 运行环境要求
+
+（1）Android 设备系统版本 7.0（API 24）及以上。
+
+（2）使用 Android Studio 打开项目后，同步 Gradle 配置，连接 Android 设备（真机或模拟器）后即可编译运行。
+
+（3）运行前确保设备已开启 USB 调试模式（真机）或已创建虚拟设备（模拟器）。
+
+### 4.2 功能操作说明
+
+#### 4.2.1 添加笔记
+
+（1）启动应用后，进入主界面，界面中央显示"暂无笔记，点击右下角 + 添加"的提示文字。
+
+（2）点击右下角的浮动按钮（+），弹出"添加笔记"对话框。
+
+（3）在对话框中输入笔记标题和内容，标题建议不超过 20 字。
+
+（4）点击"保存"按钮，笔记将保存到数据库并出现在主界面的笔记列表中。
+
+（5）若输入的标题与已有笔记重复，系统会在界面底部弹出提示"标题已存在"，对话框保持打开，可修改标题后重新保存。
+
+#### 4.2.2 查看笔记
+
+（1）所有笔记以卡片形式排列在主界面中，按时间倒序显示（最新创建的笔记在最上面）。
+
+（2）每张笔记卡片显示笔记标题、创建时间（格式为 yyyy-MM-dd HH:mm）和内容的前两行摘要。
+
+#### 4.2.3 编辑笔记
+
+（1）点击任意笔记卡片，弹出"编辑笔记"对话框，对话框中预填了原标题和内容。
+
+（2）修改标题或内容后，点击"保存"完成编辑。
+
+（3）若修改后的标题与其他已有笔记重复，系统会弹出提示"标题已被其他笔记使用"。
+
+#### 4.2.4 删除笔记
+
+（1）在笔记卡片右侧点击红色删除图标（垃圾桶图标）。
+
+（2）笔记立即从列表和数据库中移除，无需二次确认。
+
+#### 4.2.5 标题判重机制
+
+标题判重是系统的重要功能，在添加和编辑笔记时自动触发，其逻辑如下：
+
+（1）添加新笔记时，系统检查标题是否已存在于数据库中。若存在，则拒绝保存并提示用户。
+
+（2）编辑已有笔记时，系统在排除当前笔记自身的前提下检查标题是否被其他笔记占用。若被占用，则拒绝保存并提示用户。这一设计允许用户编辑笔记时不修改标题而顺利保存。
+
+（3）该功能从数据库层面保证了笔记标题的唯一性，避免数据混乱，同时也展示了后端数据库查询能力在前端交互中的实际应用。
