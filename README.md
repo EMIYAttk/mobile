@@ -1,0 +1,4 @@
+python_app文件夹下是使用python语言实现，在localhost上运行的笔记web版本。
+
+
+其余的文件是可以在Android Studio里Build后，在手机上下载并正常运行的笔记应用代码。
